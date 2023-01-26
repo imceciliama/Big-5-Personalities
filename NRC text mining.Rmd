@@ -1,0 +1,193 @@
+---
+title: "DM final project"
+author: "Cecilia Ma"
+date: "12/12/2022"
+output: html_document
+---
+
+```{r}
+library(tidyverse) 
+library(tidytext)
+library(naniar)
+library(dplyr)
+library(stringr)
+library(textclean)
+```
+
+```{r}
+library(factoextra)
+library(caret)
+```
+
+```{r}
+data = read.csv("/Users/ceciliama/Downloads/MATH656_mypersonality_final project.csv")
+```
+
+```{r}
+head(data)
+data1 = data[,-c(3,4,5,6,7)]
+n = length(data1$BETWEENNESS)
+```
+#check missing value
+```{r}
+miss_scan_count(data1,common_na_strings)
+data2 =  data1 %>% na.omit()
+miss_scan_count(data2,common_na_strings)
+```
+
+# Simplize ID by group
+```{r}
+data3 = data2 %>%                                       
+  group_by(X.AUTHID) %>%
+  dplyr::mutate(ID = cur_group_id())
+data3 = subset(data3, select = c(16,2:15))
+data3$ID = as.character(data3$ID)
+head(data3)
+```
+#change y/n to 1/0
+```{r}
+response = function(personality) {
+  for (i in 1:9916){
+    if (personality[i] == 'y'){
+      personality[i] = 1
+    } 
+    else {
+      personality[i] = 0
+    }
+  }
+  return(personality)
+}
+```
+
+```{r}
+data4 = data3
+data4$cEXT = factor(response(data3$cEXT))
+data4$cNEU = factor(response(data3$cNEU))
+data4$cAGR = factor(response(data3$cAGR))
+data4$cCON = factor(response(data3$cCON))
+data4$cOPN = factor(response(data3$cOPN))
+head(data4)
+```
+
+```{r}
+data4$STATUS = data4$STATUS  %>%
+    str_to_lower() %>%  # convert all the string to low alphabet
+    replace_contraction() %>% # replace contraction to their multi-word forms
+    replace_internet_slang() %>% # replace internet slang to normal words
+    replace_emoji() %>% # replace emoji to words
+    replace_emoticon() %>% # replace emoticon to words
+    replace_hash(replacement = "") %>% # remove hashtag
+    replace_word_elongation() %>% # replace informal writing with known semantic replacements
+    replace_html(symbol = FALSE) %>% # remove html
+    replace_url(replacement = "") %>% # remove url
+    replace_number(remove = T) %>% # remove number
+    replace_date(replacement = "") %>% # remove date
+    replace_time(replacement = "") %>% # remove time
+    str_remove_all(pattern = "[[:punct:]]") %>% # remove punctuation
+    str_remove_all(pattern = "[^\\s]*[0-9][^\\s]*") %>% # remove mixed string n number
+    str_remove_all(pattern = "[+-=]")%>%
+    str_squish() %>% # reduces repeated whitespace inside a string.
+    str_trim()
+```
+
+
+```{r}
+head(data4,30)
+```
+
+#tokenization
+```{r}
+data4_tokenized = 
+    data4 %>%
+    unnest_tokens(token,STATUS,token = 'words')
+head(data4_tokenized,20)
+dim(data4_tokenized)
+```
+
+#remove stopwords
+```{r}
+stopwords = get_stopwords() 
+dim(stopwords)
+head(stopwords,1)
+```
+```{r}
+data4_tokenized = 
+    data4_tokenized %>%
+    anti_join(stopwords, by = c(token = "word")) 
+```
+
+```{r}
+data4_tokenized %>%
+
+    # count tokens (sort according to number of occurences)
+    count(token, sort=TRUE) %>%
+
+    # show 10 randomly chosen rows
+    sample_n(20)
+```
+```{r}
+head(data4_tokenized,20)
+```
+```{r}
+dim(data4_tokenized)
+```
+
+#Extracting features from text
+```{r}
+load_nrc = function() {
+    if (!file.exists('nrc.txt'))
+        download.file("https://www.dropbox.com/s/yo5o476zk8j5ujg/NRC-Emotion-Lexicon-Wordlevel-v0.92.txt?dl=1","nrc.txt")
+    nrc = read.table("nrc.txt", col.names=c('word','sentiment','applies'), stringsAsFactors = FALSE)
+    nrc %>% filter(applies==1) %>% select(-applies)
+}
+nrc = load_nrc()
+sample_n(nrc, 10)
+```
+
+#label the word
+```{r}
+data4_token_labeled = 
+    inner_join(data4_tokenized, nrc, by = c(token = 'word')) 
+```
+
+```{r}
+head(data4_token_labeled,30)
+dim(data4_token_labeled)
+```
+#compute score
+```{r}
+data4_sentiment_scores = 
+    data4_token_labeled %>%
+    count(`ID`, sentiment)
+```
+
+```{r}
+data4_sentiment = 
+    data4_sentiment_scores %>%
+    spread(sentiment, n, fill = 0)
+
+data4_sentiment 
+```
+```{r}
+newdata =
+    inner_join(data4, data4_sentiment, by = "ID") %>%
+    select(-DATE) %>%
+    select(-STATUS)
+
+head(newdata)
+```
+
+```{r}
+# Remove duplicates based on ID
+newdata1 = newdata[!duplicated(newdata$ID), ]
+```
+
+```{r}
+#write.csv(newdata1, "/Users/ceciliama/Desktop/newdata.csv", row.names=FALSE)
+
+
+```{r}
+newdata1
+```
+
+
